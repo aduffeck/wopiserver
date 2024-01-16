@@ -445,6 +445,23 @@ def writefile(endpoint, filepath, userid, content, lockmd, islock=False):
         content = bytes(content, 'UTF-8')
     size = str(len(content))
     reference = _getcs3reference(endpoint, filepath)
+
+    if len(content) == 0:
+        # this is a 0-byte upload, use TouchFile instead
+        req = cs3sp.TouchFileRequest(ref=reference)
+        res = ctx['cs3gw'].TouchFile(request=req, metadata=[('x-access-token', userid)])
+        if res.status.code != cs3code.CODE_OK:
+            log.error('msg="Failed to touch file" filepath="%s" trace="%s" code="%s" reason="%s"' %
+                      (filepath, res.status.trace, res.status.code, res.status.message.replace('"', "'")))
+            if '_lock_' in res.status.message:    # TODO find the error code returned by Reva once this is implemented
+                raise IOError(common.EXCL_ERROR)
+            raise IOError(res.status.message)
+        tend = time.time()
+        log.info('msg="0-byte file written successfully" filepath="%s" elapsedTimems="%.1f" islock="%s"' %
+            (filepath, (tend - tstart) * 1000, islock))
+        return
+
+
     req = cs3sp.InitiateFileUploadRequest(ref=reference, lock_id=lockid, opaque=types.Opaque(
         map={"Upload-Length": types.OpaqueEntry(decoder="plain", value=str.encode(size))}))
     res = ctx['cs3gw'].InitiateFileUpload(request=req, metadata=[('x-access-token', userid)])
